@@ -9,7 +9,7 @@ import numpy as np
 from PIL import Image
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-
+Image.MAX_IMAGE_PIXELS = 250_000_000
 
 class Keys:
     def __init__(self) -> None:
