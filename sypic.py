@@ -11,6 +11,19 @@ from PIL import Image
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
+class Keys:
+    def __init__(self) -> None:
+        self.keys_down = set()
+        self.just_pressed = set()
+        self.last_keys_down = set()
+
+    def key_callback(self, window, key, scancode, action, mods):
+        if action == glfw.PRESS:
+            self.keys_down.add(key)
+        elif action == glfw.RELEASE:
+            self.keys_down.discard(key)
+
+
 class Sypic:
     def __init__(self) -> None:
         self.files: list[str] = (
@@ -27,6 +40,9 @@ class Sypic:
 
         glfw.make_context_current(self.window)
         self.ctx = moderngl.create_context()
+
+        self.keys = Keys()
+        glfw.set_key_callback(self.window, self.keys.key_callback)
 
         def framebuffer_size_callback(_, width, height):
             self.ctx.viewport = (0, 0, width, height)
@@ -76,9 +92,9 @@ class Sypic:
             sys.exit()
 
         self.tex = self.ctx.texture(self.image.size, 3, self.image.tobytes())
+        self.tex.build_mipmaps()
+        self.tex.filter = (moderngl.LINEAR_MIPMAP_LINEAR, moderngl.LINEAR)
         self.tex.use()
-
-        self.pressed = []
 
     def get_image_file_paths(self) -> list[str]:
         path_arg = sys.argv[1]
@@ -96,20 +112,6 @@ class Sypic:
 
         return image_files
 
-    def change_image(self, back=False) -> None:
-        if back == True:
-            self.file_index = (self.file_index - 1) % self.file_max
-        else: 
-            self.file_index = (self.file_index + 1) % self.file_max
-        new_image = Image.open(self.files[self.file_index]).convert("RGB")
-
-        self.tex = self.ctx.texture(new_image.size, 3, new_image.tobytes())
-        self.tex.use()
-
-        self.image.close()
-        self.image = new_image
-
-
     def setup_window(self) -> Any:
         if not glfw.init():
             raise Exception("GLFW init failed")
@@ -121,24 +123,31 @@ class Sypic:
 
         return window
 
+    def change_image(self, back=False) -> None:
+        if back == True:
+            self.file_index = (self.file_index - 1) % self.file_max
+        else:
+            self.file_index = (self.file_index + 1) % self.file_max
+        new_image = Image.open(self.files[self.file_index]).convert("RGB")
+
+        self.tex.release()
+        self.tex = self.ctx.texture(new_image.size, 3, new_image.tobytes())
+        self.tex.build_mipmaps()
+        self.tex.filter = (moderngl.LINEAR_MIPMAP_LINEAR, moderngl.LINEAR)
+        self.tex.use()
+
+        self.image.close()
+        self.image = new_image
+
     def handle_events(self) -> None:
         glfw.poll_events()
+        self.keys.just_pressed = self.keys.keys_down - self.keys.last_keys_down
 
-        if glfw.get_key(self.window, glfw.KEY_J):
-            if glfw.KEY_J not in self.pressed:
-                self.pressed.append(glfw.KEY_J)
-                self.change_image()
-        else:
-            while glfw.KEY_J in self.pressed:
-                self.pressed.remove(glfw.KEY_J)
+        if glfw.KEY_J in self.keys.just_pressed or glfw.KEY_L in self.keys.just_pressed:
+            self.change_image()
 
-        if glfw.get_key(self.window, glfw.KEY_K):
-            if glfw.KEY_K not in self.pressed:
-                self.pressed.append(glfw.KEY_K)
-                self.change_image(back=True)
-        else:
-            while glfw.KEY_K in self.pressed:
-                self.pressed.remove(glfw.KEY_K)
+        if glfw.KEY_K in self.keys.just_pressed or glfw.KEY_H in self.keys.just_pressed:
+            self.change_image(back=True)
 
     def run(self) -> None:
         while not glfw.window_should_close(self.window):
@@ -155,6 +164,7 @@ class Sypic:
             self.vao.render(moderngl.TRIANGLE_STRIP)
 
             glfw.swap_buffers(self.window)
+            self.keys.last_keys_down = set(self.keys.keys_down)
 
         glfw.terminate()
 
@@ -165,7 +175,8 @@ def print_help() -> None:
     print("  -h       Display this information.")
     sys.exit(1)
 
-if __name__ == "__main__":
+
+def main() -> None:
     if len(sys.argv) < 2:
         print_help()
 
@@ -178,3 +189,7 @@ if __name__ == "__main__":
 
     sypic = Sypic()
     sypic.run()
+
+
+if __name__ == "__main__":
+    main()
