@@ -8,10 +8,17 @@ I made this to have a simple image viewer that has zero UI to have a minimalist 
 
 image scales to fit window size there is no zoom or panning functionality
 
+arguments:
+
+ `-n` : use nearest texture filtering (good for pixel art)
+
+ `-bg <color>` : set hex background color e.g. #FF00FF for magenta
+
+controls:
+
  `j` : next image
  
  `k` : previous image
-
 
 ## 🔧 Install to PATH (with virtual environment)
 

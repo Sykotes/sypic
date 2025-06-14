@@ -1,4 +1,6 @@
+import argparse
 import os
+import re
 import sys
 from typing import Any
 
@@ -10,6 +12,7 @@ from PIL import Image
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 Image.MAX_IMAGE_PIXELS = 250_000_000
+
 
 class Keys:
     def __init__(self) -> None:
@@ -25,14 +28,16 @@ class Keys:
 
 
 class Sypic:
-    def __init__(self) -> None:
-        self.files: list[str] = (
-            self.get_image_file_paths()
+    def __init__(self, path_arg: str) -> None:
+        self.filter_nearest = False
+        self.clear_color = (0.3, 0.3, 0.3, 1.0)
+
+        self.files: list[str] = self.get_image_file_paths(
+            path_arg
         )  # full paths to all image files
         if not self.files:
             print("No images at provided path")
             sys.exit()
-
         self.file_index = 0
         self.file_max = len(self.files)
 
@@ -40,6 +45,8 @@ class Sypic:
 
         glfw.make_context_current(self.window)
         self.ctx = moderngl.create_context()
+        self.ctx.gc_mode = "auto"
+        self.ctx.enable(moderngl.BLEND)
 
         self.keys = Keys()
         glfw.set_key_callback(self.window, self.keys.key_callback)
@@ -84,20 +91,7 @@ class Sypic:
             "in_uv",
         )
 
-        try:
-            self.image = Image.open(self.files[0]).convert("RGB")
-        except FileNotFoundError:
-            print("ERROR: File not found")
-            glfw.terminate()
-            sys.exit()
-
-        self.tex = self.ctx.texture(self.image.size, 3, self.image.tobytes())
-        self.tex.build_mipmaps()
-        self.tex.filter = (moderngl.LINEAR_MIPMAP_LINEAR, moderngl.LINEAR)
-        self.tex.use()
-
-    def get_image_file_paths(self) -> list[str]:
-        path_arg = sys.argv[1]
+    def get_image_file_paths(self, path_arg: str) -> list[str]:
         files = []
         if os.path.isfile(path_arg):
             new_path = os.path.abspath(path_arg)
@@ -133,7 +127,10 @@ class Sypic:
         self.tex.release()
         self.tex = self.ctx.texture(new_image.size, 3, new_image.tobytes())
         self.tex.build_mipmaps()
-        self.tex.filter = (moderngl.LINEAR_MIPMAP_LINEAR, moderngl.LINEAR)
+        if self.filter_nearest == True:
+            self.tex.filter = (moderngl.NEAREST, moderngl.NEAREST)
+        else:
+            self.tex.filter = (moderngl.LINEAR_MIPMAP_LINEAR, moderngl.LINEAR)
         self.tex.use()
 
         self.image.close()
@@ -150,6 +147,21 @@ class Sypic:
             self.change_image(back=True)
 
     def run(self) -> None:
+        try:
+            self.image = Image.open(self.files[0]).convert("RGBA")
+        except FileNotFoundError:
+            print("ERROR: File not found")
+            glfw.terminate()
+            sys.exit()
+
+        self.tex = self.ctx.texture(self.image.size, 4, self.image.tobytes())
+        self.tex.build_mipmaps()
+        if self.filter_nearest == True:
+            self.tex.filter = (moderngl.NEAREST, moderngl.NEAREST)
+        else:
+            self.tex.filter = (moderngl.LINEAR_MIPMAP_LINEAR, moderngl.LINEAR)
+        self.tex.use()
+
         while not glfw.window_should_close(self.window):
             self.handle_events()
 
@@ -160,7 +172,7 @@ class Sypic:
             if self.program.get("in_i_ratio", False) != False:
                 self.program["in_i_ratio"] = glm.vec2(self.image.size)
 
-            self.ctx.clear(0.3, 0.3, 0.3, 1.0)
+            self.ctx.clear(*self.clear_color)
             self.vao.render(moderngl.TRIANGLE_STRIP)
 
             glfw.swap_buffers(self.window)
@@ -169,25 +181,52 @@ class Sypic:
         glfw.terminate()
 
 
-def print_help() -> None:
-    print("Usage: sypic <directory or file>")
-    print("Options:")
-    print("  -h       Display this information.")
-    sys.exit(1)
+def valid_hex_color(value: str) -> str:
+    if not re.match(r"^#?[0-9a-fA-F]{6}$", value):
+        raise argparse.ArgumentTypeError(f"{value} is not a valid hex color code")
+    return value if value.startswith("#") else f"#{value}"
+
+
+def hex_to_rgb(hex_code: str) -> tuple[float, float, float]:
+    hex_code = hex_code.lstrip("#")
+    if len(hex_code) != 6:
+        raise ValueError("Hex code must be 6 characters long.")
+
+    r = int(hex_code[0:2], 16) / 255.0
+    g = int(hex_code[2:4], 16) / 255.0
+    b = int(hex_code[4:6], 16) / 255.0
+
+    return (r, g, b)
 
 
 def main() -> None:
-    if len(sys.argv) < 2:
-        print_help()
+    parser = argparse.ArgumentParser(
+        description="A minimal GPU rendered image viewer made with python"
+    )
+    parser.add_argument(
+        "-bg",
+        "--background",
+        type=valid_hex_color,
+        help="Background colour in hex, e.g. #ff00ff",
+    )
+    parser.add_argument(
+        "-n",
+        "--filter-nearest",
+        action="store_true",
+        help="Use nearest texture filtering (good for pixel art)",
+    )
+    parser.add_argument("path", help="Path to image file or directory with images")
 
-    if sys.argv[1] == "--help" or sys.argv[1] == "-h":
-        print_help()
+    args = parser.parse_args()
 
-    if len(sys.argv) > 2:
-        print("Only provide one path")
-        print("Use -h to show help")
+    sypic = Sypic(args.path)
 
-    sypic = Sypic()
+    if args.filter_nearest:
+        sypic.filter_nearest = True
+
+    if args.background:
+        sypic.clear_color = hex_to_rgb(args.background) + (1.0,)
+
     sypic.run()
 
 
