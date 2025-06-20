@@ -1,4 +1,5 @@
 import argparse
+import math
 import os
 import re
 import sys
@@ -91,6 +92,11 @@ class Sypic:
             "in_uv",
         )
 
+        self.image_sizes: list[tuple[int, int]] = [(0, 0)] * self.file_max
+        self.loaded_textures: list = [None] * self.file_max
+        self.max_load: int = 1
+        self.should_unload: bool = False
+
     def get_image_file_paths(self, path_arg: str) -> list[str]:
         files = []
         if os.path.isfile(path_arg):
@@ -118,23 +124,34 @@ class Sypic:
         return window
 
     def change_image(self, back=False) -> None:
+        old_index = self.file_index
         if back == True:
             self.file_index = (self.file_index - 1) % self.file_max
         else:
             self.file_index = (self.file_index + 1) % self.file_max
-        new_image = Image.open(self.files[self.file_index]).convert("RGB")
 
-        self.tex.release()
-        self.tex = self.ctx.texture(new_image.size, 3, new_image.tobytes())
-        self.tex.build_mipmaps()
-        if self.filter_nearest == True:
-            self.tex.filter = (moderngl.NEAREST, moderngl.NEAREST)
-        else:
-            self.tex.filter = (moderngl.LINEAR_MIPMAP_LINEAR, moderngl.LINEAR)
-        self.tex.use()
+        if self.loaded_textures[self.file_index] == None:
+            image = Image.open(self.files[self.file_index]).convert("RGB")
+            self.image_sizes[self.file_index] = image.size
+            self.loaded_textures[self.file_index] = self.ctx.texture(
+                self.image_sizes[self.file_index], 3, image.tobytes()
+            )
+            self.loaded_textures[self.file_index].build_mipmaps()
+            if self.filter_nearest == True:
+                self.loaded_textures[self.file_index].filter = (
+                    moderngl.NEAREST,
+                    moderngl.NEAREST,
+                )
+            else:
+                self.loaded_textures[self.file_index].filter = (
+                    moderngl.LINEAR_MIPMAP_LINEAR,
+                    moderngl.LINEAR,
+                )
 
-        self.image.close()
-        self.image = new_image
+        self.loaded_textures[self.file_index].use()
+        if self.max_load <= 1:
+            self.loaded_textures[old_index].release()
+            self.loaded_textures[old_index] = None
 
     def handle_events(self) -> None:
         glfw.poll_events()
@@ -148,21 +165,46 @@ class Sypic:
 
     def run(self) -> None:
         try:
-            self.image = Image.open(self.files[0]).convert("RGBA")
+            image = Image.open(self.files[0]).convert("RGBA")
         except FileNotFoundError:
             print("ERROR: File not found")
             glfw.terminate()
             sys.exit()
 
-        self.tex = self.ctx.texture(self.image.size, 4, self.image.tobytes())
-        self.tex.build_mipmaps()
+        self.image_sizes[self.file_index] = image.size
+        self.loaded_textures[self.file_index] = self.ctx.texture(
+            self.image_sizes[self.file_index], 4, image.tobytes()
+        )
+        image.close()
+        self.loaded_textures[self.file_index].build_mipmaps()
         if self.filter_nearest == True:
-            self.tex.filter = (moderngl.NEAREST, moderngl.NEAREST)
+            self.loaded_textures[self.file_index].filter = (
+                moderngl.NEAREST,
+                moderngl.NEAREST,
+            )
         else:
-            self.tex.filter = (moderngl.LINEAR_MIPMAP_LINEAR, moderngl.LINEAR)
-        self.tex.use()
+            self.loaded_textures[self.file_index].filter = (
+                moderngl.LINEAR_MIPMAP_LINEAR,
+                moderngl.LINEAR,
+            )
+
+        self.loaded_textures[self.file_index].use()
 
         while not glfw.window_should_close(self.window):
+            if self.should_unload:
+                allowed_loaded: list[int] = [self.file_index]
+                for i in range(1, math.ceil(self.max_load / 2) + 1):
+                    allowed_loaded.append((self.file_index + i) % self.file_max)
+                    allowed_loaded.append((self.file_index - i) % self.file_max)
+
+                for i in range(self.file_max):
+                    if i in allowed_loaded:
+                        continue
+
+                    if self.loaded_textures[i]:
+                        self.loaded_textures[i].release()
+                        self.loaded_textures[i] = None
+
             self.handle_events()
 
             w_size = glfw.get_window_size(self.window)
@@ -170,13 +212,19 @@ class Sypic:
                 self.program["in_w_ratio"] = glm.vec2(w_size)
 
             if self.program.get("in_i_ratio", False) != False:
-                self.program["in_i_ratio"] = glm.vec2(self.image.size)
+                self.program["in_i_ratio"] = glm.vec2(self.image_sizes[self.file_index])
 
             self.ctx.clear(*self.clear_color)
             self.vao.render(moderngl.TRIANGLE_STRIP)
 
             glfw.swap_buffers(self.window)
             self.keys.last_keys_down = set(self.keys.keys_down)
+
+            if self.max_load > 1:
+                self.should_unload = True
+
+        for texture in self.loaded_textures:
+            texture.release()
 
         glfw.terminate()
 
@@ -185,6 +233,19 @@ def valid_hex_color(value: str) -> str:
     if not re.match(r"^#?[0-9a-fA-F]{6}$", value):
         raise argparse.ArgumentTypeError(f"{value} is not a valid hex color code")
     return value if value.startswith("#") else f"#{value}"
+
+
+def valid_max_load(value: str) -> int:
+    try:
+        max_load = int(value)
+        if max_load < 1:
+            raise argparse.ArgumentTypeError(
+                f"{value} is not an integer greater than 0"
+            )
+    except:
+        raise argparse.ArgumentTypeError(f"{value} is not an integer greater than 0")
+
+    return max_load
 
 
 def hex_to_rgb(hex_code: str) -> tuple[float, float, float]:
@@ -210,6 +271,12 @@ def main() -> None:
         help="Background colour in hex, e.g. #ff00ff",
     )
     parser.add_argument(
+        "-m",
+        "--max-loaded-images",
+        type=valid_max_load,
+        help="(EXPERIMENTAL) A maximum amount of cached images. This uses a lot of VRAM and/or RAM",
+    )
+    parser.add_argument(
         "-n",
         "--filter-nearest",
         action="store_true",
@@ -226,6 +293,9 @@ def main() -> None:
 
     if args.background:
         sypic.clear_color = hex_to_rgb(args.background) + (1.0,)
+
+    if args.max_loaded_images:
+        sypic.max_load = args.max_loaded_images
 
     sypic.run()
 
