@@ -32,6 +32,7 @@ class Sypic:
     def __init__(self, path_arg: str) -> None:
         self.filter_nearest = False
         self.clear_color = (0.3, 0.3, 0.3, 1.0)
+        self.preload_enabled: bool = True
 
         self.files: list[str] = self.get_image_file_paths(
             path_arg
@@ -95,7 +96,10 @@ class Sypic:
         self.image_sizes: list[tuple[int, int]] = [(0, 0)] * self.file_max
         self.loaded_textures: list = [None] * self.file_max
         self.max_load: int = 1
+        if self.preload_enabled:
+            self.max_load: int = 2
         self.should_unload: bool = False
+        self.should_preload: bool = False
 
     def get_image_file_paths(self, path_arg: str) -> list[str]:
         files = []
@@ -131,10 +135,10 @@ class Sypic:
             self.file_index = (self.file_index + 1) % self.file_max
 
         if self.loaded_textures[self.file_index] == None:
-            image = Image.open(self.files[self.file_index]).convert("RGB")
+            image = Image.open(self.files[self.file_index]).convert("RGBA")
             self.image_sizes[self.file_index] = image.size
             self.loaded_textures[self.file_index] = self.ctx.texture(
-                self.image_sizes[self.file_index], 3, image.tobytes()
+                self.image_sizes[self.file_index], 4, image.tobytes()
             )
             self.loaded_textures[self.file_index].build_mipmaps()
             if self.filter_nearest == True:
@@ -205,6 +209,29 @@ class Sypic:
                         self.loaded_textures[i].release()
                         self.loaded_textures[i] = None
 
+            if self.should_preload:
+                next_file_index = (self.file_index + 1) % self.file_max
+
+                if self.loaded_textures[next_file_index] == None:
+                    image = Image.open(self.files[next_file_index]).convert("RGBA")
+                    self.image_sizes[next_file_index] = image.size
+                    self.loaded_textures[next_file_index] = self.ctx.texture(
+                        self.image_sizes[next_file_index], 4, image.tobytes()
+                    )
+                    self.loaded_textures[next_file_index].build_mipmaps()
+                    if self.filter_nearest == True:
+                        self.loaded_textures[next_file_index].filter = (
+                            moderngl.NEAREST,
+                            moderngl.NEAREST,
+                        )
+                    else:
+                        self.loaded_textures[next_file_index].filter = (
+                            moderngl.LINEAR_MIPMAP_LINEAR,
+                            moderngl.LINEAR,
+                        )
+
+                    image.close()
+
             self.handle_events()
 
             w_size = glfw.get_window_size(self.window)
@@ -219,6 +246,9 @@ class Sypic:
 
             glfw.swap_buffers(self.window)
             self.keys.last_keys_down = set(self.keys.keys_down)
+
+            if self.max_load > 1 and self.preload_enabled:
+                self.should_preload= True
 
             if self.max_load > 1:
                 self.should_unload = True
@@ -274,13 +304,18 @@ def main() -> None:
         "-m",
         "--max-loaded-images",
         type=valid_max_load,
-        help="(EXPERIMENTAL) A maximum amount of cached images. This uses a lot of VRAM and/or RAM",
+        help="A maximum amount of cached images (this can use a lot of VRAM/ RAM)",
     )
     parser.add_argument(
         "-n",
         "--filter-nearest",
         action="store_true",
         help="Use nearest texture filtering (good for pixel art)",
+    )
+    parser.add_argument(
+        "--disable-preload",
+        action="store_true",
+        help="Disable preloading the next image (saves VRAM/ RAM but is slower)",
     )
     parser.add_argument("path", help="Path to image file or directory with images")
 
@@ -290,6 +325,9 @@ def main() -> None:
 
     if args.filter_nearest:
         sypic.filter_nearest = True
+
+    if args.disable_preload:
+        sypic.preload_enabled = False 
 
     if args.background:
         sypic.clear_color = hex_to_rgb(args.background) + (1.0,)

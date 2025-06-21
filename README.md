@@ -12,7 +12,11 @@ arguments:
 
  `-n` : use nearest texture filtering (good for pixel art)
 
+ `-m` : set max amount of cached images (default is 2 because of preloading) 
+
  `-bg <color>` : set hex background color e.g. #FF00FF for magenta
+
+ `--disable-preload` : disable preloading the next image (not recommended) 
 
 controls:
 
