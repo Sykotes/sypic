@@ -248,13 +248,13 @@ class Sypic:
             self.keys.last_keys_down = set(self.keys.keys_down)
 
             if self.max_load > 1 and self.preload_enabled:
-                self.should_preload= True
+                self.should_preload = True
 
             if self.max_load > 1:
                 self.should_unload = True
 
         # for texture in self.loaded_textures:
-            # texture.release()
+        # texture.release()
 
         glfw.terminate()
 
@@ -264,7 +264,9 @@ def valid_hex_color(value: str) -> str:
         raise argparse.ArgumentTypeError(f"{value} is not a valid hex color code")
     return value if value.startswith("#") else f"#{value}"
 
+
 def valid_sort_option(value: str) -> bool:
+    raise argparse.ArgumentTypeError("sorting is not yet implemented")
     options = {
         "alpha",
         "dm",
@@ -272,11 +274,10 @@ def valid_sort_option(value: str) -> bool:
     }
 
     if value not in options:
-        raise argparse.ArgumentTypeError(
-            f"{value} is not a valid sorting option"
-        )
+        raise argparse.ArgumentTypeError(f"{value} is not a valid sorting option")
 
     return True
+
 
 def valid_max_load(value: str) -> int:
     try:
@@ -316,8 +317,8 @@ def main() -> None:
     parser.add_argument(
         "-s",
         "--sort",
-        type=valid_hex_color,
-        help="Sort images by the chosen method. Default is alphabetical",
+        type=valid_sort_option,
+        help="[NOT IMPLEMENTED] Sort images by the chosen method. Default is alphabetical",
     )
     parser.add_argument(
         "-m",
@@ -352,7 +353,7 @@ def main() -> None:
         sypic.filter_nearest = True
 
     if args.disable_preload:
-        sypic.preload_enabled = False 
+        sypic.preload_enabled = False
 
     if args.background:
         sypic.clear_color = hex_to_rgb(args.background) + (1.0,)
