@@ -253,8 +253,8 @@ class Sypic:
             if self.max_load > 1:
                 self.should_unload = True
 
-        for texture in self.loaded_textures:
-            texture.release()
+        # for texture in self.loaded_textures:
+            # texture.release()
 
         glfw.terminate()
 
@@ -264,6 +264,19 @@ def valid_hex_color(value: str) -> str:
         raise argparse.ArgumentTypeError(f"{value} is not a valid hex color code")
     return value if value.startswith("#") else f"#{value}"
 
+def valid_sort_option(value: str) -> bool:
+    options = {
+        "alpha",
+        "dm",
+        "dc",
+    }
+
+    if value not in options:
+        raise argparse.ArgumentTypeError(
+            f"{value} is not a valid sorting option"
+        )
+
+    return True
 
 def valid_max_load(value: str) -> int:
     try:
@@ -301,6 +314,12 @@ def main() -> None:
         help="Background colour in hex, e.g. #ff00ff",
     )
     parser.add_argument(
+        "-s",
+        "--sort",
+        type=valid_hex_color,
+        help="Sort images by the chosen method. Default is alphabetical",
+    )
+    parser.add_argument(
         "-m",
         "--max-loaded-images",
         type=valid_max_load,
@@ -311,6 +330,12 @@ def main() -> None:
         "--filter-nearest",
         action="store_true",
         help="Use nearest texture filtering (good for pixel art)",
+    )
+    parser.add_argument(
+        "-r",
+        "--reverse",
+        action="store_true",
+        help="Reverse the sorting order",
     )
     parser.add_argument(
         "--disable-preload",
